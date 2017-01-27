@@ -1,0 +1,221 @@
+<html>
+    <head>
+        <title>Test Page for Cognito</title>
+
+        <script src="jsbn.js"></script>
+        <script src="jsbn2.js"></script>
+        <script src="sjcl.js"></script>
+        <script src="moment.js"></script>
+        <script src="aws-cognito-sdk.min.js"></script>
+        <script src="amazon-cognito-identity.min.js"></script>
+        <script src="aws-sdk.js"></script>
+
+        <script type="text/javascript">
+            var userPool;
+            var cognitoUser;
+            var loginResult;
+
+            function init () {
+                var poolData = {
+                    UserPoolId : 'us-west-2_9M8H5S4iM',
+                    ClientId : '1mqi4tjdhr4f737pbbimolhhut'
+                };
+                userPool = new AWSCognito.CognitoIdentityServiceProvider.CognitoUserPool(poolData);
+                console.log ("Initialised User Pool: " + userPool);
+            }
+
+
+            function checkLogin () {
+                cognitoUser = userPool.getCurrentUser();
+
+                if (cognitoUser != null) {
+                    cognitoUser.getSession(function(err, session) {
+                        if (err) {
+                            alert(err);
+                            return;
+                        }
+                        console.log('session validity: ' + session.isValid());
+                    });
+                }
+            }
+
+            function onLogin () {
+                    var userNameFld = document.getElementById ('userName');
+                    var passwordFld = document.getElementById ('password');
+
+                    if (userNameFld === null || passwordFld === null) {
+                        alert ('Programmatic Error. User Name or Password Field is not configured properly');
+                        return;
+                    }
+
+                    var userName = userNameFld.value;
+                    var password = passwordFld.value;
+
+
+
+                    var userData = {
+                        Username : userName,
+                        Pool : userPool
+                    };
+                    cognitoUser = new AWSCognito.CognitoIdentityServiceProvider.CognitoUser(userData);
+
+                    var authenticationData = {
+                            Username : userName,
+                            Password : password,
+                        };
+                    var authenticationDetails = new AWSCognito.CognitoIdentityServiceProvider.AuthenticationDetails(authenticationData);
+
+
+                    cognitoUser.authenticateUser(authenticationDetails, {
+                        onSuccess: function (result) {
+                            loginResult = result;
+
+                            console.log('access token + ' + result.getAccessToken().getJwtToken());
+                            /*Use the idToken for Logins Map when Federating User Pools with Cognito Identity or when passing through an Authorization Header to an API Gateway Authorizer*/
+                            console.log('idToken + ' + result.idToken.jwtToken);
+                        },
+
+                        onFailure: function(err) {
+                            alert(err);
+                        },
+
+                        newPasswordRequired: function(userAttributes, requiredAttributes) {
+                            // User was signed up by an admin and must provide new
+                            // password and required attributes, if any, to complete
+                            // authentication.
+
+                            // userAttributes: object, which is the user's current profile. It will list all attributes that are associated with the user.
+                            // Required attributes according to schema, which don’t have any values yet, will have blank values.
+                            // requiredAttributes: list of attributes that must be set by the user along with new password to complete the sign-in.
+
+                            console.log('User Attributes: ' + userAttributes);
+                            console.log('Required Attributes: ' + requiredAttributes);
+
+                            // Get these details and call
+                            // newPassword: password that user has given
+                            // attributesData: object with key as attribute name and value that the user has given.
+                            cognitoUser.completeNewPasswordChallenge('password123', {}, this)
+                        }
+                    });
+            }
+
+            function onLogout () {
+                if (cognitoUser == null) {
+                    alert ('user not logged in');
+                    return;
+                }
+
+                cognitoUser.signOut ();
+                console.log ('Signed Out');
+                cognitoUser = null;
+            }
+
+
+            function playWithS3 () {
+                AWS.config.region = 'us-west-2';
+                AWS.config.credentials = new AWS.CognitoIdentityCredentials({
+                   IdentityPoolId: 'us-west-2:b23326a5-e847-49ff-aa97-f4167056c634',
+                   Logins: {
+                      'cognito-idp.us-west-2.amazonaws.com/us-west-2_9M8H5S4iM': loginResult.idToken.jwtToken
+                   }
+                });
+
+
+                AWS.config.credentials.get(function(err){
+                    if (err) {
+                        alert(err);
+                    }
+                });
+
+                var bucketName = 'guneetapp';
+                var bucket = new AWS.S3({
+                    params: {
+                        Bucket: bucketName
+                    }
+                });
+
+                var params = {
+                  Bucket: bucketName, /* required */
+                  Key: 'some-dummy-data', /* required */
+                  Body: 'random-stuff'
+                };
+
+                bucket.listObjects({}, function (err, data) {
+                    if (err) {
+                        results.innerHTML = 'ERROR: ' + err;
+                    } else {
+                        var objKeys = "";
+                        data.Contents.forEach(function (obj) {
+                            objKeys += obj.Key + "<br>";
+                        });
+                        results.innerHTML = objKeys;
+                    }
+                });
+            }
+
+
+            function uploadToS3() {
+                AWS.config.region = 'us-west-2';
+                AWS.config.credentials = new AWS.CognitoIdentityCredentials({
+                   IdentityPoolId: 'us-west-2:b23326a5-e847-49ff-aa97-f4167056c634',
+                   Logins: {
+                      'cognito-idp.us-west-2.amazonaws.com/us-west-2_9M8H5S4iM': loginResult.idToken.jwtToken
+                   }
+                });
+
+
+                AWS.config.credentials.get(function(err){
+                    if (err) {
+                        alert(err);
+                    }
+                });
+
+                var bucketName = 'guneetapp';
+                var bucket = new AWS.S3({
+                    params: {
+                        Bucket: bucketName
+                    }
+                });
+
+
+                var files = document.getElementById('photoupload').files;
+                if (!files.length) {
+                    return alert('Please choose a file to upload first.');
+                }
+                var file = files[0];
+
+                var params = {
+                    Bucket: bucketName, /* required */
+                    Key: 'some-random-photo',
+                    Body: file,
+                    ACL: 'public-read'
+                };
+
+                bucket.upload (params, function (err, data) {
+                    if (err)
+                        console.log (err, err.stack);
+                    else
+                        console.log (data);
+                });
+            }
+        </script>
+    </head>
+
+    <body onload="init(); checkLogin ();">
+
+        <label>UserName: </label><input type="text" id="userName"> <br/>
+        <label>Password: </label><input type="password" id="password"> <br/>
+        <button onclick="onLogin ()">Login</button>
+
+        <p>
+            S3 Bucket: <button onclick="playWithS3()">Play With S3</button>
+        </p>
+        <div id="results"></div>
+
+        <input id="photoupload" type="file" accept="image/*"> <button onclick="uploadToS3()">Upload</button>
+
+        <p>
+            Logout: <button onclick="onLogout()">Logout</button>
+        </p>
+    </body>
+</html>
