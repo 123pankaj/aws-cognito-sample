@@ -14,9 +14,7 @@
         <link rel="stylesheet" href="bootstrap-3.3.7-dist/css/bootstrap.css"/>
 
         <script type="text/javascript">
-            var userPool;
             var cognitoUser;
-            var loginResult;
 
             <!-- UI Related Function -->
             function showMenuDiv (display) {
@@ -62,35 +60,69 @@
 
 
 
-            function init () {
+            function _makeAWSCredentials (idToken) {
+                return new AWS.CognitoIdentityCredentials( {
+                    IdentityPoolId: 'us-west-2:b23326a5-e847-49ff-aa97-f4167056c634',
+                    Logins: {
+                       'cognito-idp.us-west-2.amazonaws.com/us-west-2_9M8H5S4iM': idToken
+                    }
+                });
+            }
+
+
+            function _makeUserPool () {
                 var poolData = {
                     UserPoolId : 'us-west-2_9M8H5S4iM',
                     ClientId : '1mqi4tjdhr4f737pbbimolhhut'
                 };
-                userPool = new AWSCognito.CognitoIdentityServiceProvider.CognitoUserPool(poolData);
-                console.log ("Initialised User Pool: " + userPool);
+                return new AWSCognito.CognitoIdentityServiceProvider.CognitoUserPool(poolData);
             }
 
 
-            function loadUserFromLocalStorage () {
+
+            function init () {
+                AWS.config.region = 'us-west-2';
+
+
+                // Load cognito User from local storage
+                var userPool = _makeUserPool ();
                 cognitoUser = userPool.getCurrentUser();
 
-                if (cognitoUser != null) {
-                    cognitoUser.getSession(function(err, session) {
-                        if (err) {
-                            alert(err);
-                            return;
-                        }
-                        console.log('session validity: ' + session.isValid());
-                    });
 
-                    // if user is logged IN, show Menu
-                    showMenuDiv (true);
-                    showLoginDiv (false);
-                } else {
+                // If not Found, show login page
+                if (cognitoUser == null) {
                     showLoginDiv (true);
                     showMenuDiv(false);
+                    return;
                 }
+
+
+                // Load Session from Local storage if found
+                cognitoUser.getSession(function(err, session) {
+                    if (err) {
+                        alert(err);
+                        return;
+                    }
+
+                    console.log('session validity: ' + session.isValid());
+                    console.log('ID Token: ' + session.idToken.jwtToken);
+
+                    // Set Credentials within AWS Config to access other AWS services
+                    var idToken = session.idToken.jwtToken;
+                    AWS.config.credentials = _makeAWSCredentials (idToken);
+
+                    // Refresh the credentials - in case the session has expired
+                    AWS.config.credentials.get(function(err){
+                        if (err) {
+                            alert(err);
+                        }
+                    });
+
+                });
+
+                // if user is logged IN, show Menu
+                showMenuDiv (true);
+                showLoginDiv (false);
             }
 
 
@@ -110,6 +142,14 @@
                 var userName = userNameFld.value;
                 var password = passwordFld.value;
 
+                // Now Login to AWS
+                _loginToAWS (userName, password);
+            }
+
+
+
+            function _loginToAWS (userName, password) {
+                var userPool = _makeUserPool ();
                 var userData = {
                     Username : userName,
                     Pool : userPool
@@ -124,45 +164,64 @@
 
 
                 cognitoUser.authenticateUser(authenticationDetails, {
-                    onSuccess: function (result) {
-                        loginResult = result;
+                    onSuccess: _callbackOnAWSLoginSuccess,
+                    onFailure: _callbackOnAWSLoginFailure,
+                    newPasswordRequired: _callbackOnAWSForcePasswdChange
+                });
 
-                        console.log('access token + ' + result.getAccessToken().getJwtToken());
-                        /*Use the idToken for Logins Map when Federating User Pools with Cognito Identity or when passing through an Authorization Header to an API Gateway Authorizer*/
-                        console.log('idToken + ' + result.idToken.jwtToken);
+            }
 
-                        setTimeout (function () {
-                            enableButton ('loginButton', 'Sign in');
-                            showMenuDiv (true);
-                            showLoginDiv (false);
-                        }, 100);
-                    },
 
-                    onFailure: function (err) {
-                        console.log ("Failure: ");
-                        setLoginErrorMessge (err);
-                        enableButton ('loginButton', 'Sign in');
-                    },
+            function _callbackOnAWSLoginSuccess (result) {
+                console.log('access token + ' + result.getAccessToken().getJwtToken());
+                /*Use the idToken for Logins Map when Federating User Pools with Cognito Identity or when passing through an Authorization Header to an API Gateway Authorizer*/
+                console.log('idToken + ' + result.idToken.jwtToken);
 
-                    newPasswordRequired: function(userAttributes, requiredAttributes) {
-                        // User was signed up by an admin and must provide new
-                        // password and required attributes, if any, to complete
-                        // authentication.
-
-                        // userAttributes: object, which is the user's current profile. It will list all attributes that are associated with the user.
-                        // Required attributes according to schema, which don’t have any values yet, will have blank values.
-                        // requiredAttributes: list of attributes that must be set by the user along with new password to complete the sign-in.
-
-                        console.log('User Attributes: ' + userAttributes);
-                        console.log('Required Attributes: ' + requiredAttributes);
-
-                        // Get these details and call
-                        // newPassword: password that user has given
-                        // attributesData: object with key as attribute name and value that the user has given.
-                        cognitoUser.completeNewPasswordChallenge('password123', {}, this)
+                idToken = result.idToken.jwtToken;
+                AWS.config.credentials = new AWS.CognitoIdentityCredentials( {
+                    IdentityPoolId: 'us-west-2:b23326a5-e847-49ff-aa97-f4167056c634',
+                    Logins: {
+                       'cognito-idp.us-west-2.amazonaws.com/us-west-2_9M8H5S4iM': idToken
                     }
                 });
+
+                setTimeout (function () {
+                    enableButton ('loginButton', 'Sign in');
+                    showMenuDiv (true);
+                    showLoginDiv (false);
+                }, 100);
             }
+
+
+
+            function _callbackOnAWSLoginFailure (err) {
+                console.log ("Failure: ");
+                setLoginErrorMessge (err);
+                enableButton ('loginButton', 'Sign in');
+            }
+
+
+
+            // TODO: Improve this by asking for modified password
+            function _callbackOnAWSForcePasswdChange (userAttributes, requiredAttributes) {
+                // User was signed up by an admin and must provide new
+                // password and required attributes, if any, to complete
+                // authentication.
+
+                // userAttributes: object, which is the user's current profile. It will list all attributes that are associated with the user.
+                // Required attributes according to schema, which don’t have any values yet, will have blank values.
+                // requiredAttributes: list of attributes that must be set by the user along with new password to complete the sign-in.
+
+                console.log('User Attributes: ' + userAttributes);
+                console.log('Required Attributes: ' + requiredAttributes);
+
+                // Get these details and call
+                // newPassword: password that user has given
+                // attributesData: object with key as attribute name and value that the user has given.
+                cognitoUser.completeNewPasswordChallenge('password123', {}, this)
+            }
+
+
 
 
             function onLogout () {
@@ -172,10 +231,10 @@
                 }
 
                 cognitoUser.signOut ();
-                console.log ('Signed Out');
                 cognitoUser = null;
                 showLoginDiv (true);
                 showMenuDiv (false);
+                console.log ('Signed Out');
             }
 
 
@@ -184,20 +243,6 @@
                 var bucketNameFld = document.getElementById ('s3BucketName');
                 var bucketName = bucketNameFld.value;
 
-                AWS.config.region = 'us-west-2';
-                AWS.config.credentials = new AWS.CognitoIdentityCredentials({
-                   IdentityPoolId: 'us-west-2:b23326a5-e847-49ff-aa97-f4167056c634',
-                   Logins: {
-                      'cognito-idp.us-west-2.amazonaws.com/us-west-2_9M8H5S4iM': loginResult.idToken.jwtToken
-                   }
-                });
-
-
-                AWS.config.credentials.get(function(err){
-                    if (err) {
-                        alert(err);
-                    }
-                });
 
                 var bucket = new AWS.S3({
                     params: {
@@ -238,7 +283,7 @@
                 AWS.config.credentials = new AWS.CognitoIdentityCredentials({
                    IdentityPoolId: 'us-west-2:b23326a5-e847-49ff-aa97-f4167056c634',
                    Logins: {
-                      'cognito-idp.us-west-2.amazonaws.com/us-west-2_9M8H5S4iM': loginResult.idToken.jwtToken
+                      'cognito-idp.us-west-2.amazonaws.com/us-west-2_9M8H5S4iM': idToken
                    }
                 });
 
@@ -281,7 +326,7 @@
         </script>
     </head>
 
-    <body onload="init(); loadUserFromLocalStorage ()">
+    <body onload="init()">
 
         <!-- Div Showing Login Page -->
         <div class="container" style="display:none" id="loginDiv">
