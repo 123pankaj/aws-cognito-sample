@@ -1,12 +1,11 @@
 var cognitoUser;
 
-
-
 function _makeAWSCredentials (idToken) {
+    var someVar = 'cognito-idp.' + awsConfig.regionName + 'us-west-2.amazonaws.com/' + awsConfig.userPoolId;
     return new AWS.CognitoIdentityCredentials( {
-        IdentityPoolId: 'us-west-2:b23326a5-e847-49ff-aa97-f4167056c634',
+        IdentityPoolId: awsConfig.identityPoolId,
         Logins: {
-           'cognito-idp.us-west-2.amazonaws.com/us-west-2_9M8H5S4iM': idToken
+           someVar : idToken
         }
     });
 }
@@ -14,8 +13,8 @@ function _makeAWSCredentials (idToken) {
 
 function _makeUserPool () {
     var poolData = {
-        UserPoolId : 'us-west-2_9M8H5S4iM',
-        ClientId : '1mqi4tjdhr4f737pbbimolhhut'
+        UserPoolId : awsConfig.userPoolId,
+        ClientId : awsConfig.clientId
     };
     return new AWSCognito.CognitoIdentityServiceProvider.CognitoUserPool(poolData);
 }
@@ -23,7 +22,7 @@ function _makeUserPool () {
 
 
 function init () {
-    AWS.config.region = 'us-west-2';
+    AWS.config.region = awsConfig.regionName;
 
 
     // Load cognito User from local storage
