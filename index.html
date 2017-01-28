@@ -2,13 +2,15 @@
     <head>
         <title>Test Page for Cognito</title>
 
-        <script src="jsbn.js"></script>
-        <script src="jsbn2.js"></script>
-        <script src="sjcl.js"></script>
-        <script src="moment.js"></script>
-        <script src="aws-cognito-sdk.min.js"></script>
-        <script src="amazon-cognito-identity.min.js"></script>
-        <script src="aws-sdk.js"></script>
+        <script src="js/jsbn.js"></script>
+        <script src="js/jsbn2.js"></script>
+        <script src="js/sjcl.js"></script>
+        <script src="js/moment.js"></script>
+        <script src="js/aws-cognito-sdk.min.js"></script>
+        <script src="js/amazon-cognito-identity.min.js"></script>
+        <script src="js/aws-sdk.js"></script>
+        <script src="bootstrap-3.3.7-dist/js/bootstrap.js"></script>
+        <script src="bootstrap-3.3.7-dist/js/npm.js"></script>
         <link rel="stylesheet" href="bootstrap-3.3.7-dist/css/bootstrap.css"/>
 
         <script type="text/javascript">
@@ -17,15 +19,47 @@
             var loginResult;
 
             <!-- UI Related Function -->
-            function showMenuDiv () {
+            function showMenuDiv (display) {
                 var e = document.getElementById('menuDiv');
-       	        e.style.display = 'block';
+                if (display)
+                    e.style.display = 'block';
+                else
+                    e.style.display = 'none';
             }
 
-            function showLoginDiv () {
+            function showLoginDiv (display) {
                 var e = document.getElementById('loginDiv');
-       	        e.style.display = 'block';
+                if (display)
+                    e.style.display = 'block';
+                else
+                    e.style.display = 'none';
             }
+
+            function setLoginErrorMessge (err) {
+                var errorFld = document.getElementById ('loginErrMsg');
+                errorFld.innerHTML = err.message;
+            }
+
+
+            function clearLoginError () {
+                var errorFld = document.getElementById ('loginErrMsg');
+                errorFld.innerHTML = '&nbsp;';
+            }
+
+
+            function disableButton (buttonName) {
+                var aButton = document.getElementById (buttonName);
+                aButton.disabled=true;
+                aButton.innerHTML = "<img src='images/loading.gif'/>";
+            }
+
+
+            function enableButton (buttonName, buttonText) {
+                var aButton = document.getElementById (buttonName);
+                aButton.disabled=false;
+                aButton.innerHTML = buttonText;
+            }
+
 
 
             function init () {
@@ -50,18 +84,21 @@
                         console.log('session validity: ' + session.isValid());
                     });
 
-                    showMenuDiv ();
+                    // if user is logged IN, show Menu
+                    showMenuDiv (true);
+                    showLoginDiv (false);
                 } else {
-                    showLoginDiv ();
+                    showLoginDiv (true);
+                    showMenuDiv(false);
                 }
             }
 
 
-            function isUserLoggedIn () {
-                return cognitoUser != null;
-            }
 
             function onLogin () {
+                clearLoginError ();
+                disableButton ('loginButton');
+
                 var userNameFld = document.getElementById ('userName');
                 var passwordFld = document.getElementById ('password');
 
@@ -93,11 +130,18 @@
                         console.log('access token + ' + result.getAccessToken().getJwtToken());
                         /*Use the idToken for Logins Map when Federating User Pools with Cognito Identity or when passing through an Authorization Header to an API Gateway Authorizer*/
                         console.log('idToken + ' + result.idToken.jwtToken);
+
+                        setTimeout (function () {
+                            enableButton ('loginButton', 'Sign in');
+                            showMenuDiv (true);
+                            showLoginDiv (false);
+                        }, 100);
                     },
 
                     onFailure: function (err) {
                         console.log ("Failure: ");
                         setLoginErrorMessge (err);
+                        enableButton ('loginButton', 'Sign in');
                     },
 
                     newPasswordRequired: function(userAttributes, requiredAttributes) {
@@ -121,12 +165,6 @@
             }
 
 
-            function setLoginErrorMessge (err) {
-                var errorFld = document.getElementById ('loginErrMsg');
-                errorFld.innerHTML = err.message;
-                errorFld.style.display = 'block';
-            }
-
             function onLogout () {
                 if (cognitoUser == null) {
                     alert ('user not logged in');
@@ -136,10 +174,16 @@
                 cognitoUser.signOut ();
                 console.log ('Signed Out');
                 cognitoUser = null;
+                showLoginDiv (true);
+                showMenuDiv (false);
             }
 
 
-            function playWithS3 () {
+            function showS3BucketContents () {
+                disableButton ('viewS3BucketButton')
+                var bucketNameFld = document.getElementById ('s3BucketName');
+                var bucketName = bucketNameFld.value;
+
                 AWS.config.region = 'us-west-2';
                 AWS.config.credentials = new AWS.CognitoIdentityCredentials({
                    IdentityPoolId: 'us-west-2:b23326a5-e847-49ff-aa97-f4167056c634',
@@ -155,7 +199,6 @@
                     }
                 });
 
-                var bucketName = 'guneetapp';
                 var bucket = new AWS.S3({
                     params: {
                         Bucket: bucketName
@@ -169,15 +212,23 @@
                 };
 
                 bucket.listObjects({}, function (err, data) {
+                    var textToDisplay = "";
+
                     if (err) {
-                        results.innerHTML = 'ERROR: ' + err;
+                        textToDisplay = 'ERROR: ' + err;
                     } else {
-                        var objKeys = "";
+                        var count = 0;
                         data.Contents.forEach(function (obj) {
-                            objKeys += obj.Key + "<br>";
+                            textToDisplay += "- " + obj.Key + "\n";
+                            count++;
+                            if (count >=10) {
+                                return;
+                            }
                         });
-                        results.innerHTML = objKeys;
                     }
+
+                    enableButton ('viewS3BucketButton', 'View Contents')
+                    alert ("Files in S3 Bucket (upto 10 only) \n\n" + textToDisplay);
                 });
             }
 
@@ -231,25 +282,11 @@
     </head>
 
     <body onload="init(); loadUserFromLocalStorage ()">
-        <div class="container" style="display:none" id="menuDiv">
-            <h3>Welcome !!!! </h3>
 
-            <div class="row">
-                <div class="col-md-6">one</div>
-            </div>
-
-            <div class="row">
-                <div class="col-md-6">two</div>
-            </div>
-
-            <div class="row">
-                <div class="col-md-6" style="text-align:center"><button type="button" class="btn btn-danger btn-xs" onclick="onLogout()">Logout</button></div>
-            </div>
-        </div>
-
+        <!-- Div Showing Login Page -->
         <div class="container" style="display:none" id="loginDiv">
             <h3>Please Login to Proceed Further</h3>
-            <label style="display:none; color:red" id="loginErrMsg"></label>
+            <label style="color:red" id="loginErrMsg">&nbsp;</label>
 
             <div class="form-inline">
                 <div class="form-group">
@@ -260,9 +297,30 @@
                     <label class="sr-only" for="exampleInputPassword3">Password</label>
                     <input type="password" class="form-control" id="password" placeholder="Password">
                 </div>
-                <button class="btn btn-default" onclick="onLogin ()">Sign in</button>
+                <button class="btn btn-default" onclick="onLogin ()" id="loginButton">Sign in</button>
             </div>
         </div>
+
+        <!-- Div Showing the Post Login Menu -->
+        <div class="container" style="display:none" id="menuDiv">
+
+            <h3>Welcome !!!! </h3>
+
+            <div class="row">
+                <div class="col-md-12"><h5>S3</h5></div>
+            </div>
+            <div class="row">
+                <div class="col-md-3"><input type="text" class="form-control" id="s3BucketName" placeholder="S3Bucket Name" /></div>
+                <div class="col-md-3"><button class="btn btn-default" onclick="showS3BucketContents ()" id="viewS3BucketButton">View Contents</button></div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-6">&nbsp;</div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-6" style="text-align:center"><button type="button" class="btn btn-danger" onclick="onLogout()">Logout</button></div>
+            </div>
     </body>
 <!--
     <body onload="init(); loadUserFromLocalStorage ();">
